@@ -1,5 +1,5 @@
 """
-PC-SC vs PC-EC: 10 tests per condition + selected metrics + one 4x2 mean±std figure.
+SPC vs EDC: 10 tests per condition + selected metrics + one 4x2 mean±std figure.
 
 Saved and plotted metrics:
 1) sim_time_s
@@ -54,13 +54,13 @@ class Config:
     signal_names: tuple = ("oscillator","lorenz")
 
     # Main sweep
-    n_sens_values: tuple = tuple(range(20, 201, 20))
+    n_sens_values: tuple = tuple(range(10, 561, 50))
 
-    # 10 independent tests per condition
+    # 20 independent tests per condition
     n_tests: int = 10
 
     # Common simulation
-    T: float = 100.0
+    T: float = 30.0
     dt: float = 0.001
 
     # Lorenz parameters
@@ -68,6 +68,8 @@ class Config:
     sigma: float = 10.0
     beta: float = 2.667
     x0_lorenz: tuple = (1.0, 1.0, 1.0)
+
+    n_mem_tests: int = 3
 
     # Oscillator parameters
     oscillator_omega: float = 2.0 * math.pi
@@ -81,7 +83,7 @@ class Config:
     rate_high: float = 200.0
 
     # Training / learning
-    cue_end: float = 25.0
+    cue_end: float = 5
     ridge_lambda_sens: float = 1e-2
     ridge_lambda_dec: float = 1e-2
     eta: float = 1e-3
@@ -92,18 +94,18 @@ class Config:
     n_err: int = 50
 
     # Offline recurrent decoder for autonomous o1
-    max_train_samples: int = 30000
+    max_train_samples: int = 3000
 
-    # Static decoders for PC-SC error population
+    # Static decoders for SPC error population
     decoder_train_samples: int = 6000
 
     # Metrics
-    sync_start_offset_after_cue: float = 5.0
-    smooth_win: int = 1001
+    sync_start_offset_after_cue: float = 0.5
+    smooth_win: int = 101
     amp_thresh: float = 1e-3
 
     # Output / plotting
-    out_dir: str = "results_PC-SC_PC-EC_10tests_8metrics_4x2"
+    out_dir: str = "results_SPC_EDC_10tests_8metrics_4x2"
     dpi: int = 260
     show_plots: bool = False
     save_raw_csv: bool = True
@@ -248,6 +250,34 @@ def measure_call(func, *args, **kwargs):
     return result, stats
 
 
+def measure_time(func, *args, **kwargs):
+    """Wall-clock time of one call, with no profiler attached.
+ 
+    gc.collect() is done before the clock starts so that a collection carried
+    over from previous work is not charged to this call.
+    """
+    gc.collect()
+    t0 = time.perf_counter()
+    result = func(*args, **kwargs)
+    elapsed = time.perf_counter() - t0
+    return result, elapsed
+ 
+ 
+def measure_memory(func, *args, **kwargs):
+    """Peak Python allocation of one call, in MB.
+ 
+    Run as a separate pass: tracemalloc inflates the runtime by 3.5-4x, so any
+    time taken from inside this function is meaningless and is not returned.
+    """
+    gc.collect()
+    tracemalloc.start()
+    try:
+        result = func(*args, **kwargs)
+    finally:
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+    return result, peak / (1024 ** 2)
+
 # =============================================================================
 # LIF / NEF helpers
 # =============================================================================
@@ -314,7 +344,6 @@ def population_rates(X, enc, gain, bias, tau_rc, tau_ref):
     J = X @ enc.T
     J = J * gain[None, :] + bias[None, :]
     return lif_rate_from_current(J, tau_rc=tau_rc, tau_ref=tau_ref)
-
 
 
 def solve_ridge(A, Y, lam=1e-2):
@@ -585,8 +614,8 @@ def train_sensory_recurrent_decoder(ref, rec_target, enc_s, gain_s, bias_s, cfg:
 
 def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Config, seed):
     arch = arch.upper()
-    if arch not in {"PC-EC", "PC-SC"}:
-        raise ValueError("arch must be 'PC-EC' or 'PC-SC'")
+    if arch not in {"EDC", "SPC"}:
+        raise ValueError("arch must be 'EDC' or 'SPC'")
 
     rng = np.random.default_rng(seed)
     ref = signal_info["ref"]
@@ -594,7 +623,7 @@ def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Con
     D = ref.shape[1]
     N_t = t.size
     N_sens = enc_s.shape[0]
-    use_error_population = arch == "PC-SC"
+    use_error_population = arch == "SPC"
 
     enc_z, gain_z, bias_z = init_population(
         cfg.n_lat,
@@ -843,7 +872,7 @@ def plot_big_4x2_mean_std(df_raw, cfg: Config, fig_dir: Path):
         )
 
         fig.suptitle(
-            f"{signal_name}: PC-SC vs PC-EC, mean ± std over {cfg.n_tests} tests",
+            f"{signal_name}: SPC vs EDC, mean ± std over {cfg.n_tests} tests",
             y=0.998,
             fontsize=22,
         )
@@ -883,7 +912,7 @@ def run_sweep(cfg: Config):
 
     rows = []
 
-    print("\n=== PC-SC vs PC-EC sweep: 10 tests + 8 metrics 4x2 plot ===")
+    print("\n=== SPC vs EDC sweep: 10 tests + 8 metrics 4x2 plot ===")
     print(f"Output directory: {out_dir.resolve()}")
     print(f"Signals: {cfg.signal_names}")
     print(f"N_sens values: {cfg.n_sens_values}")
@@ -920,37 +949,61 @@ def run_sweep(cfg: Config):
                     cfg.rate_high,
                 )
 
-                W_s_rec, train_stats = measure_call(
-                    train_sensory_recurrent_decoder,
-                    ref,
-                    rec_target,
-                    enc_s,
-                    gain_s,
-                    bias_s,
-                    cfg,
-                )
+                # W_s_rec, train_stats = measure_call(
+                #     train_sensory_recurrent_decoder,
+                #     ref,
+                #     rec_target,
+                #     enc_s,
+                #     gain_s,
+                #     bias_s,
+                #     cfg,
+                # )
+
+                W_s_rec, train_time_s = measure_time(
+                    train_sensory_recurrent_decoder, ref, rec_target,
+                    enc_s, gain_s, bias_s, cfg)
+                if test_id < cfg.n_mem_tests:
+                    _, train_mem_mb = measure_memory(
+                        train_sensory_recurrent_decoder, ref, rec_target,
+                        enc_s, gain_s, bias_s, cfg)
+                else:
+                    train_mem_mb = float("nan")
 
                 print(
                     f"Sensory decoder: "
-                    f"time={train_stats['time_s']:.2f}s, "
-                    f"py_peak={train_stats['python_peak_mem_mb']:.1f}MB, "
-                    f"rss_peak_delta={train_stats['rss_peak_delta_mb']:.1f}MB"
+                    f"time={train_time_s:.2f}s, "
+                    f"py_peak={train_mem_mb:.1f}MB, "
                 )
 
-                for arch_idx, arch in enumerate(["PC-EC", "PC-SC"]):
+                for arch_idx, arch in enumerate(["EDC", "SPC"]):
                     sim_seed = cfg.base_seed + 1_000_000 * test_id + 10_000 * arch_idx + N_sens + 999 * D
 
-                    result, sim_stats = measure_call(
-                        run_architecture,
-                        arch,
-                        signal_info,
-                        W_s_rec,
-                        enc_s,
-                        gain_s,
-                        bias_s,
-                        cfg,
-                        sim_seed,
-                    )
+                    # result, sim_stats = measure_call(
+                    #     run_architecture,
+                    #     arch,
+                    #     signal_info,
+                    #     W_s_rec,
+                    #     enc_s,
+                    #     gain_s,
+                    #     bias_s,
+                    #     cfg,
+                    #     sim_seed,
+                    # )
+
+                    result, sim_time_s = measure_time(
+                        run_architecture, arch, signal_info, W_s_rec,
+                        enc_s, gain_s, bias_s, cfg, sim_seed)
+
+                    # Pass 2: peak memory, profiler attached, time discarded.
+                    # Only for the first few tests: the quantity is deterministic
+                    # up to the spike pattern and has almost no variance, so
+                    # repeating it 20 times only doubles the cost of the sweep.
+                    if test_id < cfg.n_mem_tests:
+                        _, sim_mem_mb = measure_memory(
+                            run_architecture, arch, signal_info, W_s_rec,
+                            enc_s, gain_s, bias_s, cfg, sim_seed)
+                    else:
+                        sim_mem_mb = float("nan")
 
                     m = result["metrics"]
                     row = {
@@ -958,8 +1011,8 @@ def run_sweep(cfg: Config):
                         "N_sens": N_sens,
                         "arch": arch,
                         "test_id": test_id + 1,
-                        "sim_time_s": sim_stats["time_s"],
-                        "sim_python_peak_mem_mb": sim_stats["python_peak_mem_mb"],
+                        "sim_time_s": sim_time_s,
+                        "sim_python_peak_mem_mb": sim_mem_mb,
                         "mean_amp_corr": m["mean_amp_corr"],
                         "mean_freq_corr": m["mean_freq_corr"],
                         "mean_plv": m["mean_plv"],
@@ -1013,20 +1066,7 @@ def run_sweep(cfg: Config):
 
 
 if __name__ == "__main__":
-    # Быстрый тест перед полной серией:
-    # CFG.n_tests = 2
-    # CFG.n_sens_values = (20, 40)
-    # CFG.T = 10.0
-    # CFG.cue_end = 3.0
-    # CFG.sync_start_offset_after_cue = 2.0
-    # CFG.max_train_samples = 3000
-    # CFG.decoder_train_samples = 1000
-    # CFG.dpi = 130
 
-    # Полная серия по умолчанию:
-    # CFG.n_tests = 10
-    # CFG.signal_names = ("lorenz",)
-    # CFG.n_sens_values = tuple(range(20, 201, 20))
 
     run_sweep(CFG)
 
