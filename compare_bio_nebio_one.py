@@ -14,7 +14,6 @@ Architectures:
        and e_dec drives latent state z.
 
 Outputs:
-- sweep over N_sens = 100..1000 with step 100;
 - synchronization quality between autonomous o1 and top-down prediction g;
 - runtime and memory metrics;
 - overview figures:
@@ -1186,19 +1185,4 @@ def run_sweep(cfg: Config):
 
 
 if __name__ == "__main__":
-    # Быстрый тест перед полной серией:
-    # CFG.signal_names = ("oscillator",)
-    # CFG.n_sens_values = (100, 200)
-    # CFG.T = 10.0
-    # CFG.cue_end = 3.0
-    # CFG.max_train_samples = 3000
-    # CFG.decoder_train_samples = 1000
-    # CFG.dpi = 120
-
-    # Только Lorenz:
-    # CFG.signal_names = ("lorenz",)
-
-    # Только oscillator:
-    # CFG.signal_names = ("oscillator",)
-
     run_sweep(CFG)
