@@ -15,7 +15,7 @@ Engineering Framework (NEF) approach. They evaluate reconstruction quality,
 synchronization, runtime, and memory use on a chaotic Lorenz system and a 2-D
 harmonic oscillator.
 
-![Example reconstruction](figs/3_1_new.png)
+![Example reconstruction](figs/3_3_new.png)
 
 ## Repository contents
 
