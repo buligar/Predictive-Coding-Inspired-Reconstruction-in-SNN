@@ -8,7 +8,7 @@ The study compares two prediction-error architectures for reconstructing an auto
 
 The revised manuscript examines reconstruction quality, runtime, emitted spike rate, hyperparameter sensitivity, latent-state clipping, and reconstruction after freezing decoder adaptation.
 
-![Lorenz reconstruction: reference, autonomous sensory state, and top-down prediction](figs/components_lorenz_PC_SC_N0540.png)
+![Lorenz reconstruction: reference, autonomous sensory state, and top-down prediction](figs/3_3_new.png)
 
 ## Model and terminology
 
