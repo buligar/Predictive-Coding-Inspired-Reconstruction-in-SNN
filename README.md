@@ -72,8 +72,6 @@ source .venv/bin/activate
 python -m pip install numpy==1.26.4 pandas==2.2.3 matplotlib==3.10.1 openpyxl psutil
 ```
 
-On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1`.
-
 `openpyxl` supports the Excel tables. `psutil` is optional and enables process-memory measurements in the representative-run and earlier comparison scripts; its absence does not prevent the simulations from running. Versions of these two packages were not recorded in the benchmark file.
 
 Run all commands below from the repository root. For a headless Linux environment, use `export MPLBACKEND=Agg` before launching scripts.
