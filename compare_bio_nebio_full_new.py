@@ -3,7 +3,7 @@ PC-SC vs PC-EC: 10 tests per condition + selected metrics + one 4x2 mean±std fi
 
 Saved and plotted metrics:
 1) sim_time_s
-2) sim_python_peak_mem_mb
+2) spikes_per_s
 3) mean_amp_corr
 4) mean_freq_corr
 5) mean_plv
@@ -13,23 +13,29 @@ Saved and plotted metrics:
 
 Figure layout:
 4 rows x 2 columns
-Row 1: sim_time_s, sim_python_peak_mem_mb
+Row 1: sim_time_s, spikes_per_s
 Row 2: mean_amp_corr, mean_freq_corr
 Row 3: mean_plv, mean_phase_deg
 Row 4: rmse_ref_o1, rmse_o1_g
+
+Important benchmarking convention:
+- sim_time_s measures only the online SNN simulation and PES adaptation.
+- offline decoder fitting and population initialization are performed before the timer starts.
+- synchronization/RMSE metric post-processing is performed after the timer stops.
+- spikes_per_s is the total number of spikes emitted by all spiking populations
+  participating in the online architecture, divided by simulated duration.
 
 Outputs:
 - summary_metrics_raw.csv/xlsx      : all runs, selected columns only
 - summary_metrics_mean_std.csv/xlsx : mean ± std by signal, N_sens, arch
 - one large 4x2 figure per signal with mean ± std across 10 tests
+- benchmark_environment.txt         : hardware/software environment used for the benchmark
 """
 
-import os
 import gc
 import time
 import math
-import threading
-import tracemalloc
+import platform
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -37,11 +43,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-
-try:
-    import psutil
-except ImportError:
-    psutil = None
 
 
 # =============================================================================
@@ -56,7 +57,7 @@ class Config:
     # Main sweep
     n_sens_values: tuple = tuple(range(10, 561, 50))
 
-    # 20 independent tests per condition
+    # Independent tests per condition
     n_tests: int = 10
 
     # Common simulation
@@ -69,7 +70,6 @@ class Config:
     beta: float = 2.667
     x0_lorenz: tuple = (1.0, 1.0, 1.0)
 
-    n_mem_tests: int = 3
 
     # Oscillator parameters
     oscillator_omega: float = 2.0 * math.pi
@@ -105,7 +105,7 @@ class Config:
     amp_thresh: float = 1e-3
 
     # Output / plotting
-    out_dir: str = "results_PC-SC_PC-EC_10tests_8metrics_4x2"
+    out_dir: str = "results_PC-SC_PC-EC_10tests_8metrics_4x2_spikes"
     dpi: int = 260
     show_plots: bool = False
     save_raw_csv: bool = True
@@ -116,6 +116,14 @@ class Config:
 
     # Randomness
     base_seed: int = 1
+
+    # Benchmark environment (reported for reproducibility)
+    benchmark_os: str = "Windows 11 Pro 25H2"
+    benchmark_cpu: str = "AMD Ryzen 7 7700, 8 cores / 16 logical processors, max reported clock 3.8 GHz"
+    benchmark_ram: str = "32 GB DDR5-4800"
+    benchmark_gpu: str = "NVIDIA GeForce RTX 4070 Ti SUPER (not used by the NumPy CPU simulations)"
+    benchmark_storage: str = "XPG GAMMIX S70 BLADE 2 TB + WD_BLACK SN770 1 TB NVMe SSD"
+    benchmark_ide: str = "Visual Studio Code 1.135.0"
 
 
 CFG = Config()
@@ -140,7 +148,7 @@ mpl.rcParams.update({
 # and negative phase shifts across dimensions.
 PLOT_METRICS = [
     ("sim_time_s", "Simulation time, s", False),
-    ("sim_python_peak_mem_mb", "Python peak memory, MB", False),
+    ("spikes_per_s", "Emitted spikes per simulated second", False),
 
     ("mean_amp_corr", "Mean amplitude correlation", True),
     ("mean_freq_corr", "Mean frequency correlation", True),
@@ -173,110 +181,21 @@ for _metric in SUMMARY_METRICS:
 
 
 # =============================================================================
-# Timing and memory
+# Timing
 # =============================================================================
-
-class PeakRSSMonitor:
-    def __init__(self, interval=0.01):
-        self.interval = interval
-        self.peak = np.nan
-        self.start_rss = np.nan
-        self.end_rss = np.nan
-        self._stop = threading.Event()
-        self._thread = None
-        self._process = psutil.Process(os.getpid()) if psutil is not None else None
-
-    def start(self):
-        if self._process is None:
-            return
-        self.start_rss = self._process.memory_info().rss
-        self.peak = self.start_rss
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _run(self):
-        while not self._stop.is_set():
-            try:
-                rss = self._process.memory_info().rss
-                if rss > self.peak:
-                    self.peak = rss
-            except Exception:
-                pass
-            time.sleep(self.interval)
-
-    def stop(self):
-        if self._process is None:
-            return
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1.0)
-        self.end_rss = self._process.memory_info().rss
-
-    @property
-    def peak_delta_mb(self):
-        if not np.isfinite(self.peak) or not np.isfinite(self.start_rss):
-            return np.nan
-        return (self.peak - self.start_rss) / (1024 ** 2)
-
-    @property
-    def rss_delta_mb(self):
-        if not np.isfinite(self.end_rss) or not np.isfinite(self.start_rss):
-            return np.nan
-        return (self.end_rss - self.start_rss) / (1024 ** 2)
-
-
-def measure_call(func, *args, **kwargs):
-    gc.collect()
-    monitor = PeakRSSMonitor(interval=0.005)
-    tracemalloc.start()
-    monitor.start()
-    t0 = time.perf_counter()
-    result = None
-    try:
-        result = func(*args, **kwargs)
-    finally:
-        elapsed = time.perf_counter() - t0
-        monitor.stop()
-        _, py_peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-
-    stats = {
-        "time_s": elapsed,
-        "python_peak_mem_mb": py_peak / (1024 ** 2),
-        "rss_peak_delta_mb": monitor.peak_delta_mb,
-        "rss_delta_mb": monitor.rss_delta_mb,
-    }
-    return result, stats
-
 
 def measure_time(func, *args, **kwargs):
     """Wall-clock time of one call, with no profiler attached.
- 
-    gc.collect() is done before the clock starts so that a collection carried
-    over from previous work is not charged to this call.
+
+    Garbage collection is completed before the clock starts so that a pending
+    collection from previous work is not charged to the measured simulation.
     """
     gc.collect()
     t0 = time.perf_counter()
     result = func(*args, **kwargs)
     elapsed = time.perf_counter() - t0
     return result, elapsed
- 
- 
-def measure_memory(func, *args, **kwargs):
-    """Peak Python allocation of one call, in MB.
- 
-    Run as a separate pass: tracemalloc inflates the runtime by 3.5-4x, so any
-    time taken from inside this function is meaningless and is not returned.
-    """
-    gc.collect()
-    tracemalloc.start()
-    try:
-        result = func(*args, **kwargs)
-    finally:
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-    return result, peak / (1024 ** 2)
+
 
 # =============================================================================
 # LIF / NEF helpers
@@ -480,8 +399,11 @@ def analytic_signal(x):
 def moving_average(x, win):
     x = np.asarray(x, dtype=float)
     k = int(win)
-    if k <= 1:
+    if k <= 1 or x.size <= 1:
         return x
+    # np.convolve(..., mode="same") returns max(len(x), len(kernel)); limiting
+    # the window prevents a length mismatch for very short test trajectories.
+    k = min(k, x.size)
     kernel = np.ones(k) / k
     return np.convolve(x, kernel, mode="same")
 
@@ -612,18 +534,18 @@ def train_sensory_recurrent_decoder(ref, rec_target, enc_s, gain_s, bias_s, cfg:
     return solve_ridge(A_train, Y_train, cfg.ridge_lambda_rec)
 
 
-def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Config, seed):
+def prepare_architecture(arch, D, cfg: Config, seed):
+    """Create fixed populations/decoders before benchmark timing starts.
+
+    In particular, the PC-SC static error decoder is fitted here, outside the
+    measured online simulation. This keeps sim_time_s free of offline decoder
+    fitting and population initialization costs.
+    """
     arch = arch.upper()
     if arch not in {"PC-EC", "PC-SC"}:
         raise ValueError("arch must be 'PC-EC' or 'PC-SC'")
 
     rng = np.random.default_rng(seed)
-    ref = signal_info["ref"]
-    t = signal_info["t"]
-    D = ref.shape[1]
-    N_t = t.size
-    N_sens = enc_s.shape[0]
-    use_error_population = arch == "PC-SC"
 
     enc_z, gain_z, bias_z = init_population(
         cfg.n_lat,
@@ -635,7 +557,7 @@ def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Con
         cfg.rate_high,
     )
 
-    if use_error_population:
+    if arch == "PC-SC":
         enc_e, gain_e, bias_e = init_population(
             cfg.n_err,
             D,
@@ -648,6 +570,52 @@ def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Con
         W_e = solve_static_decoder(enc_e, gain_e, bias_e, D, rng, cfg)
     else:
         enc_e = gain_e = bias_e = W_e = None
+
+    return {
+        "enc_z": enc_z,
+        "gain_z": gain_z,
+        "bias_z": bias_z,
+        "enc_e": enc_e,
+        "gain_e": gain_e,
+        "bias_e": bias_e,
+        "W_e": W_e,
+    }
+
+
+def run_architecture(
+    arch,
+    signal_info,
+    W_s_rec,
+    enc_s,
+    gain_s,
+    bias_s,
+    arch_params,
+    cfg: Config,
+):
+    """Run only the online SNN dynamics and PES adaptation.
+
+    Offline recurrent/static decoder fitting and population initialization are
+    deliberately excluded from this function so that the measured sim_time_s
+    corresponds to the online simulation itself.
+    """
+    arch = arch.upper()
+    if arch not in {"PC-EC", "PC-SC"}:
+        raise ValueError("arch must be 'PC-EC' or 'PC-SC'")
+
+    ref = signal_info["ref"]
+    t = signal_info["t"]
+    D = ref.shape[1]
+    N_t = t.size
+    N_sens = enc_s.shape[0]
+    use_error_population = arch == "PC-SC"
+
+    enc_z = arch_params["enc_z"]
+    gain_z = arch_params["gain_z"]
+    bias_z = arch_params["bias_z"]
+    enc_e = arch_params["enc_e"]
+    gain_e = arch_params["gain_e"]
+    bias_e = arch_params["bias_e"]
+    W_e = arch_params["W_e"]
 
     u = np.zeros((N_t, D), dtype=float)
     z = np.zeros((N_t, D), dtype=float)
@@ -673,6 +641,13 @@ def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Con
 
     W_pred = np.zeros((cfg.n_lat, D), dtype=float)
 
+    # Spike counters for the ONLINE simulation only.
+    # PC-EC: sensory + latent populations.
+    # PC-SC: sensory + error + latent populations.
+    n_spikes_sens = 0
+    n_spikes_err = 0
+    n_spikes_lat = 0
+
     for n in range(1, N_t):
         # 1) Autonomous sensory population o1
         V_s, ref_s, spikes_s = lif_population_step(
@@ -686,6 +661,8 @@ def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Con
             cfg.tau_rc,
             cfg.tau_ref,
         )
+        n_spikes_sens += int(np.count_nonzero(spikes_s))
+
         a_s = update_filtered_activity(a_s, spikes_s, cfg.dt, cfg.tau_syn)
         rec_s = a_s @ W_s_rec
 
@@ -713,6 +690,8 @@ def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Con
                 cfg.tau_rc,
                 cfg.tau_ref,
             )
+            n_spikes_err += int(np.count_nonzero(spikes_e))
+
             a_e = update_filtered_activity(a_e, spikes_e, cfg.dt, cfg.tau_syn)
             e_drive = a_e @ W_e
         else:
@@ -734,6 +713,8 @@ def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Con
             cfg.tau_rc,
             cfg.tau_ref,
         )
+        n_spikes_lat += int(np.count_nonzero(spikes_z))
+
         a_z = update_filtered_activity(a_z, spikes_z, cfg.dt, cfg.tau_syn)
         g_raw = a_z @ W_pred
         g_hat = g_hat + (cfg.dt / cfg.tau_syn) * (g_raw - g_hat)
@@ -742,13 +723,24 @@ def run_architecture(arch, signal_info, W_s_rec, enc_s, gain_s, bias_s, cfg: Con
         # 5) PES-like local decoder update
         W_pred += cfg.eta * np.outer(a_z, e) * cfg.dt
 
-    metrics = summarize_sync(u, g, ref, t, cfg)
+    simulated_duration_s = (N_t - 1) * cfg.dt
+    total_spikes = n_spikes_sens + n_spikes_err + n_spikes_lat
+    spikes_per_s = total_spikes / simulated_duration_s if simulated_duration_s > 0 else np.nan
+
     return {
         "signal": signal_info["signal"],
         "arch": arch,
         "N_sens": N_sens,
         "D": D,
-        "metrics": metrics,
+        "u": u,
+        "g": g,
+        "total_spikes": int(total_spikes),
+        "spikes_per_s": float(spikes_per_s),
+        "spike_counts": {
+            "sensory": int(n_spikes_sens),
+            "error": int(n_spikes_err),
+            "latent": int(n_spikes_lat),
+        },
     }
 
 
@@ -892,6 +884,34 @@ def plot_big_4x2_mean_std(df_raw, cfg: Config, fig_dir: Path):
 
 
 # =============================================================================
+# Benchmark environment
+# =============================================================================
+
+def save_benchmark_environment(cfg: Config, out_dir: Path):
+    """Save the exact benchmark environment reported in the manuscript."""
+    lines = [
+        f"Operating system: {cfg.benchmark_os}",
+        f"CPU: {cfg.benchmark_cpu}",
+        f"RAM: {cfg.benchmark_ram}",
+        f"GPU: {cfg.benchmark_gpu}",
+        f"Storage: {cfg.benchmark_storage}",
+        f"IDE: {cfg.benchmark_ide}",
+        f"Python: {platform.python_version()}",
+        f"NumPy: {np.__version__}",
+        f"pandas: {pd.__version__}",
+        f"Matplotlib: {mpl.__version__}",
+        "Benchmark device: CPU",
+        "GPU acceleration: no",
+        "sim_time_s includes: online SNN simulation + PES adaptation",
+        "sim_time_s excludes: sensory recurrent decoder fitting, PC-SC static error-decoder fitting, population initialization, and metric post-processing",
+        "spikes_per_s: total online spikes from all spiking populations divided by simulated duration",
+    ]
+    path = out_dir / "benchmark_environment.txt"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+# =============================================================================
 # Main experiment
 # =============================================================================
 
@@ -900,6 +920,8 @@ def run_sweep(cfg: Config):
     fig_dir = out_dir / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
     fig_dir.mkdir(parents=True, exist_ok=True)
+
+    environment_path = save_benchmark_environment(cfg, out_dir)
 
     with open(out_dir / "config.txt", "w", encoding="utf-8") as f:
         for k, v in asdict(cfg).items():
@@ -912,7 +934,7 @@ def run_sweep(cfg: Config):
 
     rows = []
 
-    print("\n=== PC-SC vs PC-EC sweep: 10 tests + 8 metrics 4x2 plot ===")
+    print("\n=== PC-SC vs PC-EC sweep: runtime + spikes/s + synchronization metrics ===")
     print(f"Output directory: {out_dir.resolve()}")
     print(f"Signals: {cfg.signal_names}")
     print(f"N_sens values: {cfg.n_sens_values}")
@@ -935,7 +957,8 @@ def run_sweep(cfg: Config):
             for test_id in range(cfg.n_tests):
                 print(f"\n--- test {test_id + 1}/{cfg.n_tests} ---")
 
-                # New sensory population and recurrent decoder for every test
+                # New sensory population and recurrent decoder for every test.
+                # Decoder fitting is OFFLINE and is excluded from sim_time_s.
                 sens_seed = cfg.base_seed + 1_000_000 * test_id + 100_000 + N_sens + 999 * D
                 rng_s = np.random.default_rng(sens_seed)
 
@@ -949,70 +972,63 @@ def run_sweep(cfg: Config):
                     cfg.rate_high,
                 )
 
-                # W_s_rec, train_stats = measure_call(
-                #     train_sensory_recurrent_decoder,
-                #     ref,
-                #     rec_target,
-                #     enc_s,
-                #     gain_s,
-                #     bias_s,
-                #     cfg,
-                # )
-
-                W_s_rec, train_time_s = measure_time(
-                    train_sensory_recurrent_decoder, ref, rec_target,
-                    enc_s, gain_s, bias_s, cfg)
-                if test_id < cfg.n_mem_tests:
-                    _, train_mem_mb = measure_memory(
-                        train_sensory_recurrent_decoder, ref, rec_target,
-                        enc_s, gain_s, bias_s, cfg)
-                else:
-                    train_mem_mb = float("nan")
+                W_s_rec, sensory_decoder_fit_time_s = measure_time(
+                    train_sensory_recurrent_decoder,
+                    ref,
+                    rec_target,
+                    enc_s,
+                    gain_s,
+                    bias_s,
+                    cfg,
+                )
 
                 print(
-                    f"Sensory decoder: "
-                    f"time={train_time_s:.2f}s, "
-                    f"py_peak={train_mem_mb:.1f}MB, "
+                    f"Offline sensory decoder fit: {sensory_decoder_fit_time_s:.2f}s "
+                    f"(excluded from sim_time_s)"
                 )
 
                 for arch_idx, arch in enumerate(["PC-EC", "PC-SC"]):
-                    sim_seed = cfg.base_seed + 1_000_000 * test_id + 10_000 * arch_idx + N_sens + 999 * D
+                    sim_seed = (
+                        cfg.base_seed
+                        + 1_000_000 * test_id
+                        + 10_000 * arch_idx
+                        + N_sens
+                        + 999 * D
+                    )
 
-                    # result, sim_stats = measure_call(
-                    #     run_architecture,
-                    #     arch,
-                    #     signal_info,
-                    #     W_s_rec,
-                    #     enc_s,
-                    #     gain_s,
-                    #     bias_s,
-                    #     cfg,
-                    #     sim_seed,
-                    # )
+                    # All fixed architecture initialization, including the PC-SC
+                    # static error decoder, is completed BEFORE the timer starts.
+                    arch_params = prepare_architecture(arch, D, cfg, sim_seed)
 
                     result, sim_time_s = measure_time(
-                        run_architecture, arch, signal_info, W_s_rec,
-                        enc_s, gain_s, bias_s, cfg, sim_seed)
+                        run_architecture,
+                        arch,
+                        signal_info,
+                        W_s_rec,
+                        enc_s,
+                        gain_s,
+                        bias_s,
+                        arch_params,
+                        cfg,
+                    )
 
-                    # Pass 2: peak memory, profiler attached, time discarded.
-                    # Only for the first few tests: the quantity is deterministic
-                    # up to the spike pattern and has almost no variance, so
-                    # repeating it 20 times only doubles the cost of the sweep.
-                    if test_id < cfg.n_mem_tests:
-                        _, sim_mem_mb = measure_memory(
-                            run_architecture, arch, signal_info, W_s_rec,
-                            enc_s, gain_s, bias_s, cfg, sim_seed)
-                    else:
-                        sim_mem_mb = float("nan")
+                    # Synchronization/RMSE post-processing is deliberately
+                    # performed AFTER the timer and is not part of sim_time_s.
+                    m = summarize_sync(
+                        result["u"],
+                        result["g"],
+                        signal_info["ref"],
+                        signal_info["t"],
+                        cfg,
+                    )
 
-                    m = result["metrics"]
                     row = {
                         "signal": signal_info["signal"],
                         "N_sens": N_sens,
                         "arch": arch,
                         "test_id": test_id + 1,
                         "sim_time_s": sim_time_s,
-                        "sim_python_peak_mem_mb": sim_mem_mb,
+                        "spikes_per_s": result["spikes_per_s"],
                         "mean_amp_corr": m["mean_amp_corr"],
                         "mean_freq_corr": m["mean_freq_corr"],
                         "mean_plv": m["mean_plv"],
@@ -1025,7 +1041,7 @@ def run_sweep(cfg: Config):
                     print(
                         f"{arch}: "
                         f"time={row['sim_time_s']:.2f}s, "
-                        f"py_mem={row['sim_python_peak_mem_mb']:.1f}MB, "
+                        f"spikes/s={row['spikes_per_s']:.1f}, "
                         f"amp={row['mean_amp_corr']:.3f}, "
                         f"freq={row['mean_freq_corr']:.3f}, "
                         f"PLV={row['mean_plv']:.3f}, "
@@ -1034,7 +1050,7 @@ def run_sweep(cfg: Config):
                         f"RMSE(o1,g)={row['rmse_o1_g']:.6f}"
                     )
 
-                    del result
+                    del result, arch_params
                     gc.collect()
 
                 # Save partial results after each test
@@ -1056,11 +1072,17 @@ def run_sweep(cfg: Config):
     if cfg.save_big_4x2_figure:
         plot_big_4x2_mean_std(df_raw, cfg, fig_dir)
 
-    print(f"\nSaved raw CSV:       {out_dir / 'summary_metrics_raw.csv'}")
-    print(f"Saved raw XLSX:      {out_dir / 'summary_metrics_raw.xlsx'}")
-    print(f"Saved mean±std CSV:  {out_dir / 'summary_metrics_mean_std.csv'}")
-    print(f"Saved mean±std XLSX: {out_dir / 'summary_metrics_mean_std.xlsx'}")
-    print(f"Saved figures:       {fig_dir}")
+    print(f"\nBenchmark environment: {environment_path}")
+    if cfg.save_raw_csv:
+        print(f"Saved raw CSV:       {out_dir / 'summary_metrics_raw.csv'}")
+    if cfg.save_raw_xlsx:
+        print(f"Saved raw XLSX:      {out_dir / 'summary_metrics_raw.xlsx'}")
+    if cfg.save_mean_std_csv:
+        print(f"Saved mean±std CSV:  {out_dir / 'summary_metrics_mean_std.csv'}")
+    if cfg.save_mean_std_xlsx:
+        print(f"Saved mean±std XLSX: {out_dir / 'summary_metrics_mean_std.xlsx'}")
+    if cfg.save_big_4x2_figure:
+        print(f"Saved figures:       {fig_dir}")
 
     return df_raw, df_agg
 

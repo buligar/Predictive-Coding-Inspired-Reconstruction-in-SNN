@@ -102,7 +102,7 @@ class Config:
     # This makes steady z about tau_z * e, often too small.
     # k_error_to_z = 1/tau_z makes z track the error scale with time constant tau_z.
     # To reproduce the old behavior, set k_error_to_z = 1.0.
-    k_error_to_z: float = 1
+    k_error_to_z: float = 1000
 
     # Fixed hidden populations
     n_lat: int = 50
@@ -1195,5 +1195,257 @@ def run_sweep(cfg: Config):
     return df
 
 
+# =============================================================================
+# 4 x 2 clipping figure: panels c) and d) only
+# =============================================================================
+
+def _copy_cfg(cfg: Config, **changes):
+    """Create an independent Config copy with selected fields changed."""
+    values = asdict(cfg)
+    values.update(changes)
+    return Config(**values)
+
+
+def plot_clipping_cd_8panels(
+    cfg: Config,
+    arch="PC-SC",
+    n_oscillator=20,
+    n_lorenz=540,
+    out_name=None,
+):
+    """
+    Run four clipping-ablation conditions and combine only the former
+    overview panels c) [top-down prediction g(t)] and d) [latent state z(t)]
+    into one 4 x 2 figure:
+
+        row 1: oscillator, z_clip = 0
+        row 2: oscillator, z_clip = 1
+        row 3: Lorenz,     z_clip = 0
+        row 4: Lorenz,     z_clip = 1
+
+    The same random seed and the same trained sensory recurrent decoder are
+    reused within each reference system, so z_clip=0 vs z_clip=1 is paired.
+    """
+    arch = arch.upper()
+    if arch not in {"PC-EC", "PC-SC"}:
+        raise ValueError("arch must be 'PC-EC' or 'PC-SC'")
+
+    conditions = [
+        ("oscillator", 0.0, int(n_oscillator)),
+        ("oscillator", 1.0, int(n_oscillator)),
+        ("lorenz",     0.0, int(n_lorenz)),
+        ("lorenz",     1.0, int(n_lorenz)),
+    ]
+
+    out_dir = Path(cfg.out_dir)
+    fig_dir = out_dir / "figures"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fig_dir.mkdir(parents=True, exist_ok=True)
+
+    if out_name is None:
+        out_name = f"clipping_cd_8panels_{arch.replace('-', '_')}.png"
+    out_path = fig_dir / out_name
+
+    # Cache sensory population/decoder because clipping does not affect o1.
+    sensory_cache = {}
+    results = []
+
+    for signal_name, z_clip, N_sens in conditions:
+        case_cfg = _copy_cfg(
+            cfg,
+            signal_names=(signal_name,),
+            n_sens_values=(N_sens,),
+            z_clip=z_clip,
+            save_each_n_figures=False,
+            save_comparison_figures=False,
+            show_plots=False,
+        )
+
+        cache_key = (signal_name, N_sens)
+        if cache_key not in sensory_cache:
+            signal_info = make_reference_signal(signal_name, case_cfg)
+            ref = signal_info["ref"]
+            D = signal_info["D"]
+
+            dref_dt = np.gradient(ref, case_cfg.dt, axis=0)
+            rec_target = ref + case_cfg.tau_o1 * dref_dt
+
+            # Exactly the same sensory initialization rule as run_sweep().
+            rng_s = np.random.default_rng(
+                case_cfg.base_seed + 100000 + N_sens + 999 * D
+            )
+            enc_s, gain_s, bias_s = init_population(
+                N_sens,
+                D,
+                rng_s,
+                case_cfg.tau_rc,
+                case_cfg.tau_ref,
+                case_cfg.rate_low,
+                case_cfg.rate_high,
+            )
+
+            print(
+                f"Training sensory decoder: {signal_info['title']}, "
+                f"N_sens={N_sens}"
+            )
+            W_s_rec = train_sensory_recurrent_decoder(
+                ref,
+                rec_target,
+                enc_s,
+                gain_s,
+                bias_s,
+                case_cfg,
+            )
+
+            sensory_cache[cache_key] = (
+                signal_info,
+                W_s_rec,
+                enc_s,
+                gain_s,
+                bias_s,
+            )
+        else:
+            (
+                signal_info,
+                W_s_rec,
+                enc_s,
+                gain_s,
+                bias_s,
+            ) = sensory_cache[cache_key]
+
+        # Same architecture seed for z_clip=0 and z_clip=1 -> paired ablation.
+        arch_idx = 0 if arch == "PC-EC" else 1
+        D = signal_info["D"]
+        seed = case_cfg.base_seed + 10_000 * arch_idx + N_sens + 999 * D
+
+        print(
+            f"Running {signal_info['title']} | {arch} | "
+            f"z_clip={z_clip:g} | N_sens={N_sens}"
+        )
+
+        result = run_architecture(
+            arch,
+            signal_info,
+            W_s_rec,
+            enc_s,
+            gain_s,
+            bias_s,
+            case_cfg,
+            seed,
+        )
+        result["z_clip"] = z_clip
+        result["plot_cfg"] = case_cfg
+        results.append(result)
+
+        print(
+            f"    RMSE(o1,g) = {result['metrics']['rmse_o1_g']:.6g}"
+        )
+
+    # -------------------------------------------------------------------------
+    # One combined 4 x 2 figure = 8 panels
+    # -------------------------------------------------------------------------
+    fig = plt.figure(figsize=(16, 24), constrained_layout=False)
+    gs = fig.add_gridspec(4, 2, hspace=0.35, wspace=0.17)
+
+    panel_labels = ["a)", "b)", "c)", "d)", "e)", "f)", "g)", "h)"]
+    panel_idx = 0
+
+    for row, result in enumerate(results):
+        case_cfg = result["plot_cfg"]
+        t = result["t"]
+        g = result["g"]
+        z = result["z"]
+        z_clip = result["z_clip"]
+        signal_name = result["signal"]
+
+        i0 = int(np.searchsorted(t, case_cfg.plot_from_sec))
+
+        if signal_name == "oscillator":
+            row_title = rf"Ordinary oscillator, $z_{{\mathrm{{clip}}}}={z_clip:g}$"
+        else:
+            row_title = rf"Lorenz attractor, $z_{{\mathrm{{clip}}}}={z_clip:g}$"
+
+        # Former panel c): top-down prediction g(t).
+        # For clipping OFF, use automatic limits so divergence is not hidden
+        # by the normalized [-1,1] axes used in the original 3-D panel c).
+        g_fixed_limits = bool(z_clip > 0.0)
+        ax_g = add_phase_subplot(
+            fig,
+            gs[row, 0],
+            g[i0:],
+            row_title + "\n" + r"Top-down prediction $g(t)$",
+            fixed_limits=g_fixed_limits,
+            panel_label=panel_labels[panel_idx],
+        )
+        panel_idx += 1
+
+        # Former panel d): latent state z(t), always with its real scale.
+        ax_z = add_phase_subplot(
+            fig,
+            gs[row, 1],
+            z[i0:],
+            row_title + "\n" + r"Latent state $z(t)$",
+            fixed_limits=False,
+            panel_label=panel_labels[panel_idx],
+        )
+        panel_idx += 1
+
+        # Bring the two columns visually closer together.
+        # Left-column axes are anchored to their right edge and right-column
+        # axes to their left edge; this is especially useful for square 2-D panels.
+        ax_g.set_anchor("E")
+        ax_z.set_anchor("W")
+
+        # Restore useful axis styling for the 2-D oscillator panels.
+        # set_box_aspect(1) makes the physical axes box square. Because the
+        # oscillator and Lorenz panels occupy identically sized GridSpec cells,
+        # this also reduces the 2-D panels to approximately the same visible
+        # size as the 3-D Lorenz axes instead of filling the whole wide cell.
+        for ax in (ax_g, ax_z):
+            if result["D"] == 2:
+                ax.set_xlabel("x")
+                ax.set_ylabel("y")
+                ax.tick_params(axis="both", labelsize=14)
+                ax.grid(True, linestyle="--", alpha=0.35)
+                ax.set_box_aspect(1)
+                # Column anchoring is set below to bring the two columns closer.
+
+    fig.subplots_adjust(
+        left=0.07,
+        right=0.97,
+        bottom=0.045,
+        top=0.94,
+        wspace=0.06,
+        hspace=0.50,
+    )
+
+    fig.savefig(
+        out_path,
+        dpi=cfg.dpi,
+        bbox_inches="tight",
+        pad_inches=0.30,
+    )
+
+    if cfg.show_plots:
+        plt.show()
+    plt.close(fig)
+
+    print(f"\nSaved combined 8-panel figure: {out_path.resolve()}")
+    return results, out_path
+
+
 if __name__ == "__main__":
-    run_sweep(CFG)
+    # Four rows requested:
+    # 1) z_clip=0 oscillator
+    # 2) z_clip=1 oscillator
+    # 3) z_clip=0 Lorenz
+    # 4) z_clip=1 Lorenz
+    #
+    # Change arch to "PC-EC" if you need the continuous-error architecture.
+    plot_clipping_cd_8panels(
+        CFG,
+        arch="PC-SC",
+        n_oscillator=20,
+        n_lorenz=540,
+    )
+

@@ -87,15 +87,21 @@ class Config:
 
     # Training / learning
     cue_end: float = 5
-    ridge_lambda_sens: float = 1e-2
-    ridge_lambda_dec: float = 1e-2
+    ridge_lambda_rec: float = 1e-2
+    ridge_lambda_e: float = 1e-2
     eta: float = 1e-3
+
+    # Latent-state projection / clipping.
+    # Baseline z_clip=1.0 reproduces the original projection z in [-1, 1].
+    # Set z_clip=0.0 to disable latent-state clipping completely.
+    # This does NOT change the separate [-1, 1] input range of the PC-SC error population.
+    z_clip: float = 1
 
     # In the old code z_dot = -z/tau_z + e.
     # This makes steady z about tau_z * e, often too small.
     # k_error_to_z = 1/tau_z makes z track the error scale with time constant tau_z.
     # To reproduce the old behavior, set k_error_to_z = 1.0.
-    k_error_to_z: float = 1.0
+    k_error_to_z: float = 1
 
     # Fixed hidden populations
     n_lat: int = 50
@@ -307,7 +313,7 @@ def solve_static_decoder(enc, gain, bias, D, rng, cfg: Config, target="identity"
         Y = X
     else:
         raise ValueError(f"Unknown decoder target: {target}")
-    return solve_ridge(A, Y, cfg.ridge_lambda_dec)
+    return solve_ridge(A, Y, cfg.ridge_lambda_e)
 
 
 # =============================================================================
@@ -894,7 +900,7 @@ def train_sensory_recurrent_decoder(ref, rec_target, enc_s, gain_s, bias_s, cfg:
             A_train[j] = a.astype(np.float32)
             j += 1
 
-    W_s_rec = solve_ridge(A_train, Y_train, cfg.ridge_lambda_sens)
+    W_s_rec = solve_ridge(A_train, Y_train, cfg.ridge_lambda_rec)
     return W_s_rec
 
 
@@ -1009,7 +1015,12 @@ def run_architecture(
 
         z_dot = (-z[n - 1] / cfg.tau_z) + cfg.k_error_to_z * e_drive
         z[n] = z[n - 1] + cfg.dt * z_dot
-        z[n] = np.clip(z[n], -1.0, 1.0)
+
+        # Projection of the latent state onto a bounded domain.
+        # z_clip = 1.0 -> original [-1, 1] clipping.
+        # z_clip = 0.0 -> no clipping (ablation condition).
+        if cfg.z_clip > 0.0:
+            z[n] = np.clip(z[n], -cfg.z_clip, cfg.z_clip)
 
         # 4) Latent population z and top-down prediction decoder
         V_z, ref_z, spikes_z = lif_population_step(

@@ -92,6 +92,9 @@ class Config:
     ridge_lambda_e: float = 1e-2
     eta: float = 1e-3
 
+    pes_start: float = 0.0
+    pes_end: float = 15.0
+
     # Latent-state projection / clipping.
     # Baseline z_clip=1.0 reproduces the original projection z in [-1, 1].
     # Set z_clip=0.0 to disable latent-state clipping completely.
@@ -102,7 +105,7 @@ class Config:
     # This makes steady z about tau_z * e, often too small.
     # k_error_to_z = 1/tau_z makes z track the error scale with time constant tau_z.
     # To reproduce the old behavior, set k_error_to_z = 1.0.
-    k_error_to_z: float = 1
+    k_error_to_z: float = 1.0
 
     # Fixed hidden populations
     n_lat: int = 50
@@ -547,6 +550,57 @@ def set_panel_title(ax, panel_label, title, pad=14, label_size=18, title_size=17
     ax.set_title(panel_label, loc="left", pad=pad, fontsize=label_size)
 
 
+def add_time_markers(ax, cfg: Config, show_pes_text=True):
+    """Mark cue removal and the moment when PES learning is switched off.
+
+    A narrow vertical band centered at cfg.pes_end marks the transition to
+    the frozen-decoder regime (eta_eff = 0).
+    """
+    # Cue removal
+    ax.axvline(
+        cfg.cue_end,
+        linestyle="--",
+        linewidth=1.0,
+        color="k",
+        alpha=0.8,
+        zorder=4,
+    )
+
+    # PES off: narrow vertical strip + central dashed line
+    half_width = max(0.05, 2.0 * cfg.dt)
+    ax.axvspan(
+        cfg.pes_end - half_width,
+        cfg.pes_end + half_width,
+        color="crimson",
+        alpha=0.18,
+        linewidth=0,
+        zorder=3,
+    )
+    ax.axvline(
+        cfg.pes_end,
+        linestyle="--",
+        linewidth=1.5,
+        color="crimson",
+        alpha=0.95,
+        zorder=5,
+    )
+
+    if show_pes_text:
+        ax.text(
+            cfg.pes_end,
+            0.98,
+            "PES off",
+            transform=ax.get_xaxis_transform(),
+            rotation=90,
+            va="top",
+            ha="right",
+            fontsize=11,
+            color="crimson",
+            backgroundcolor="white",
+            zorder=6,
+        )
+
+
 def _auto_limits_2d(ax, data):
     data = np.asarray(data)
     x_min, y_min = np.nanmin(data[:, 0]), np.nanmin(data[:, 1])
@@ -666,6 +720,8 @@ def plot_overview(result, cfg: Config, out_path):
     labels = result["labels"]
 
     i0 = int(np.searchsorted(t, cfg.plot_from_sec))
+    # i0 = 15000
+
 
     spk_o1_t, spk_o1_i = result["spikes_o1"]
     spk_err_t, spk_err_i = result["spikes_error"]
@@ -711,7 +767,7 @@ def plot_overview(result, cfg: Config, out_path):
     ax5 = fig.add_subplot(gs[1, 0])
     for d, lab in enumerate(labels):
         ax5.plot(t[i0:], e_true[i0:, d], linewidth=0.9, label=rf"$e_{lab}$")
-    ax5.axvline(cfg.cue_end, linestyle="--", linewidth=0.9, color="k", alpha=0.8)
+    add_time_markers(ax5, cfg, show_pes_text=True)
     set_panel_title(ax5, "e)", r"Prediction error", pad=12)
     ax5.set_xlabel("Time, s")
     ax5.tick_params(axis="both", labelsize=16)
@@ -721,7 +777,7 @@ def plot_overview(result, cfg: Config, out_path):
     ax6 = fig.add_subplot(gs[1, 1])
     if spk_o1_t.size > 0:
         ax6.plot(spk_o1_t, spk_o1_i, "|", markersize=2.0)
-    ax6.axvline(cfg.cue_end, linestyle="--", linewidth=0.9, color="k", alpha=0.8)
+    add_time_markers(ax6, cfg, show_pes_text=True)
     set_panel_title(ax6, "f)", r"Spiking activity $o_1$", pad=12)
     ax6.set_xlabel("Time, s")
     ax6.tick_params(axis="both", labelsize=16)
@@ -733,7 +789,7 @@ def plot_overview(result, cfg: Config, out_path):
         ax7 = fig.add_subplot(gs[1, 2])
         if spk_err_t.size > 0:
             ax7.plot(spk_err_t, spk_err_i, "|", markersize=2.0)
-        ax7.axvline(cfg.cue_end, linestyle="--", linewidth=0.9, color="k", alpha=0.8)
+        add_time_markers(ax7, cfg, show_pes_text=True)
         set_panel_title(ax7, "g)", r"Spiking activity error", pad=12)
         ax7.set_xlabel("Time, s")
         ax7.tick_params(axis="both", labelsize=16)
@@ -751,7 +807,7 @@ def plot_overview(result, cfg: Config, out_path):
 
     if spk_z_t.size > 0:
         ax8.plot(spk_z_t, spk_z_i, "|", markersize=2.0)
-    ax8.axvline(cfg.cue_end, linestyle="--", linewidth=0.9, color="k", alpha=0.8)
+    add_time_markers(ax8, cfg, show_pes_text=True)
     set_panel_title(ax8, panel_label_o2, r"Spiking activity $o_2$", pad=12)
     ax8.set_xlabel("Time, s")
     ax8.tick_params(axis="both", labelsize=16)
@@ -796,7 +852,7 @@ def plot_components(result, cfg: Config, out_path):
         ax.plot(t[i0:], ref[i0:, d], linewidth=1.2, label="reference")
         ax.plot(t[i0:], u[i0:, d], linewidth=1.2, label=r"autonomous $o_1$")
         ax.plot(t[i0:], g[i0:, d], linewidth=1.2, linestyle=(0, (10, 10)), label=r"$g$")
-        ax.axvline(cfg.cue_end, linestyle="--", linewidth=1.0)
+        add_time_markers(ax, cfg, show_pes_text=True)
         ax.set_ylabel(labels[d])
         ax.set_title(f"Component {labels[d]}")
         ax.grid(True, linestyle="--", alpha=0.35)
@@ -905,7 +961,17 @@ def train_sensory_recurrent_decoder(ref, rec_target, enc_s, gain_s, bias_s, cfg:
     return W_s_rec
 
 
+def rmse_interval(u, g, t, t_start, t_end):
+    mask = (t >= t_start) & (t < t_end)
 
+    if not np.any(mask):
+        return np.nan
+
+    return float(
+        np.sqrt(
+            np.mean((u[mask] - g[mask]) ** 2)
+        )
+    )
 
 
 def run_architecture(
@@ -1038,13 +1104,21 @@ def run_architecture(
         g[n] = g_hat
 
         # 5) PES-like local update for top-down decoder
-        W_pred += cfg.eta * np.outer(a_z, e) * cfg.dt
+        # W_pred += cfg.eta * np.outer(a_z, e) * cfg.dt
+        # 5) PES-like local update for top-down decoder
+        if cfg.pes_start <= t[n] < cfg.pes_end:
+            eta_eff = cfg.eta
+        else:
+            eta_eff = 0.0
+
+        W_pred += eta_eff * np.outer(a_z, e) * cfg.dt
 
     spk_s = concat_spikes(spike_times_s, spike_ids_s)
     spk_z = concat_spikes(spike_times_z, spike_ids_z)
     spk_e = concat_spikes(spike_times_e, spike_ids_e)
 
     metrics = summarize_sync(u, g, ref, t, cfg, labels)
+
 
     return {
         "signal": signal_info["signal"],

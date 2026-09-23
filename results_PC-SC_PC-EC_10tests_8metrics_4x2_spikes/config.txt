@@ -1,0 +1,55 @@
+signal_names: ('oscillator', 'lorenz')
+n_sens_values: (10, 60, 110, 160, 210, 260, 310, 360, 410, 460, 510, 560)
+n_tests: 10
+T: 30.0
+dt: 0.001
+rho: 28.0
+sigma: 10.0
+beta: 2.667
+x0_lorenz: (1.0, 1.0, 1.0)
+oscillator_omega: 6.283185307179586
+x0_oscillator: (1.0, 0.0)
+tau_syn: 0.05
+tau_rc: 0.02
+tau_ref: 0.002
+rate_low: 100.0
+rate_high: 200.0
+cue_end: 5
+ridge_lambda_rec: 0.01
+ridge_lambda_e: 0.01
+eta: 0.001
+n_lat: 50
+n_err: 50
+max_train_samples: 3000
+decoder_train_samples: 6000
+sync_start_offset_after_cue: 0.5
+smooth_win: 101
+amp_thresh: 0.001
+out_dir: results_PC-SC_PC-EC_10tests_8metrics_4x2_spikes
+dpi: 260
+show_plots: False
+save_raw_csv: True
+save_raw_xlsx: True
+save_mean_std_csv: True
+save_mean_std_xlsx: True
+save_big_4x2_figure: True
+base_seed: 1
+benchmark_os: Windows 11 Pro 25H2
+benchmark_cpu: AMD Ryzen 7 7700, 8 cores / 16 logical processors, max reported clock 3.8 GHz
+benchmark_ram: 32 GB DDR5-4800
+benchmark_gpu: NVIDIA GeForce RTX 4070 Ti SUPER (not used by the NumPy CPU simulations)
+benchmark_storage: XPG GAMMIX S70 BLADE 2 TB + WD_BLACK SN770 1 TB NVMe SSD
+benchmark_ide: Visual Studio Code 1.135.0
+
+RAW_SAVE_COLUMNS: ['signal', 'N_sens', 'arch', 'test_id', 'sim_time_s', 'spikes_per_s', 'mean_amp_corr', 'mean_freq_corr', 'mean_plv', 'mean_phase_deg', 'rmse_ref_o1', 'rmse_o1_g']
+AGG_SAVE_COLUMNS: ['signal', 'N_sens', 'arch', 'n_tests', 'sim_time_s_mean', 'sim_time_s_std', 'spikes_per_s_mean', 'spikes_per_s_std', 'mean_amp_corr_mean', 'mean_amp_corr_std', 'mean_freq_corr_mean', 'mean_freq_corr_std', 'mean_plv_mean', 'mean_plv_std', 'mean_phase_deg_mean', 'mean_phase_deg_std', 'rmse_ref_o1_mean', 'rmse_ref_o1_std', 'rmse_o1_g_mean', 'rmse_o1_g_std']
+
+PLOT_METRICS:
+  sim_time_s: Simulation time, s
+  spikes_per_s: Emitted spikes per simulated second
+  mean_amp_corr: Mean amplitude correlation
+  mean_freq_corr: Mean frequency correlation
+  mean_plv: Mean PLV
+  mean_phase_deg: Mean phase difference, deg
+  rmse_ref_o1: RMSE(reference, $o_1$)
+  rmse_o1_g: RMSE($o_1$, $g$)

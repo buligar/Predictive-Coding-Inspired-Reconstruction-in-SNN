@@ -4,11 +4,11 @@ predictive-coding spiking networks -- SINGLE-FIGURE RMSE VERSION.
 
 WHAT THIS PRODUCES
 ------------------
-One figure per reference signal, with 7 x 2 = 14 panels:
+One figure per reference signal, with 8 x 2 = 16 panels:
 
-    rows    = the seven ablated hyperparameters
+    rows    = the eight ablated hyperparameters
               (eta, tau_syn, tau_rc, tau_ref,
-               ridge_lambda_sens, ridge_lambda_dec, cue_end)
+               ridge_lambda_rec, ridge_lambda_e, cue_end, z_clip)
     columns = the two RMSE metrics listed in AblationConfig.rmse_metrics
               (default: RMSE(o1, g) and RMSE(reference, g))
 
@@ -27,8 +27,8 @@ WHAT CHANGED vs the previous version
   driven only by rec_s and the cue), so PC-EC and PC-SC would overlap exactly.
   It is available via AblationConfig.rmse_metrics if you want it as a check.
 * Baseline de-duplication: the baseline value of every parameter produces an
-  identical Config, so it was previously simulated 7 times. Results are now
-  cached per (config, seed, arch), which removes ~20% of the runs.
+  identical Config, so it would otherwise be simulated 8 times. Results are
+  cached per (config, seed, arch), avoiding redundant baseline runs.
 * cue_end sweep now uses a COMMON evaluation window across values
   (align_eval_window=True). Previously the metric window started at
   cue_end + sync_start_offset_after_cue, i.e. a different window per value.
@@ -49,7 +49,7 @@ OUTPUTS (written to AblationConfig.out_dir)
 -------------------------------------------
 * ablation_raw.csv                    one row per (signal, param, value, arch, seed)
 * ablation_aggregated.csv             mean/std over seeds
-* figures/ablation_rmse_grid_<signal>.png / .pdf    the 14-panel figure
+* figures/ablation_rmse_grid_<signal>.png / .pdf    the 16-panel figure
 """
 
 import os
@@ -76,7 +76,7 @@ TICK_LABELSIZE = 13
 # =============================================================================
 
 # <-- SET THIS to the filename (without ".py") of your main simulation file.
-SIM_MODULE = "PC-EC_PC-SC"
+SIM_MODULE = "PC-EC_PC-SC_lorenz"
 
 # Make a sibling file importable regardless of the current working directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -100,9 +100,10 @@ ABLATION_GRID = {
     "tau_syn":           [0.01, 0.02, 0.05, 0.10, 0.20],   # synaptic time constant
     "tau_rc":            [0.005, 0.01, 0.02, 0.05],        # membrane time constant
     "tau_ref":           [0.001, 0.002, 0.003, 0.004],     # refractory period
-    "ridge_lambda_sens": [1e-3, 1e-2, 1e-1],               # sensory decoder regularization
-    "ridge_lambda_dec":  [1e-3, 1e-2, 1e-1],               # error decoder regularization (PC-SC)
-    "cue_end":           [1, 2, 3, 4, 5],                  # forcing (cue) duration
+    "ridge_lambda_rec": [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],               # sensory decoder regularization
+    "ridge_lambda_e":  [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],               # error decoder regularization (PC-SC)
+    "cue_end":           [0.1, 1, 2, 3, 4, 5, 10, 20],                  # forcing (cue) duration
+    "z_clip":            [0.0, 1.0, 2.0],
 }
 # ABLATION_GRID = {
 #     "eta":               [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],   # PES learning rate
@@ -111,7 +112,7 @@ ABLATION_GRID = {
 # Row order of the final figure. Only parameters present in the sweep are drawn.
 PARAM_ORDER = (
     "eta", "tau_syn", "tau_rc", "tau_ref",
-    "ridge_lambda_sens", "ridge_lambda_dec", "cue_end",
+    "ridge_lambda_rec", "ridge_lambda_e", "cue_end", "z_clip",
 )
 # PARAM_ORDER = (
 #     "eta", "tau_syn",
@@ -128,7 +129,7 @@ PARAM_TO_FIELDS = {
 
 # Parameters that span orders of magnitude are plotted on a log x-axis.
 LOG_PARAMS = {"eta", "tau_syn", "tau_rc", "tau_ref",
-              "ridge_lambda_sens", "ridge_lambda_dec"}
+              "ridge_lambda_rec", "ridge_lambda_e"}
 
 # Axis labels used in the figure.
 PARAM_LABEL = {
@@ -136,9 +137,10 @@ PARAM_LABEL = {
     "tau_syn":           r"$\tau_{\mathrm{syn}}$, s",
     "tau_rc":            r"$\tau_{\mathrm{RC}}$, s",
     "tau_ref":           r"$\tau_{\mathrm{ref}}$, s",
-    "ridge_lambda_sens": r"$\lambda_{\mathrm{sens}}$",
-    "ridge_lambda_dec":  r"$\lambda_{\mathrm{dec}}$",
+    "ridge_lambda_rec": r"$\lambda_{\mathrm{rec}}$",
+    "ridge_lambda_e":  r"$\lambda_{\mathrm{e}}$",
     "cue_end":           r"cue duration, s",
+    "z_clip":            r"latent clipping bound $c$ (0 = off)",
 }
 
 RMSE_LABEL = {
@@ -160,7 +162,7 @@ class AblationConfig:
     signal_names: tuple = ("oscillator",)
 
     # A single, representative population size (held fixed while hyperparameters
-    # vary). 540 matches the operating point of the main sweep.
+    # vary). 20 matches the operating point of the main sweep.
     N_sens: int = 20
 
     # Random seeds per configuration. 10 matches the paper; raise to 20-30 for
@@ -171,7 +173,7 @@ class AblationConfig:
     params: tuple = None
 
     # ---- figure -------------------------------------------------------------
-    # The two RMSE columns of the 14-panel figure. Order = left, right.
+    # The two RMSE columns of the 16-panel figure. Order = left, right.
     rmse_metrics: tuple = ("rmse_ref_o1", "rmse_o1_g")
     panel_w: float = 6.2            # width  of one panel, inches
     panel_h: float = 2.9            # height of one panel, inches
@@ -277,7 +279,7 @@ def _mean_abs_phase_deg(metrics, labels):
 # 3. Caches
 #    (a) sensory decoder: not retrained when the swept parameter cannot change it
 #    (b) whole runs: the baseline value of every parameter yields an identical
-#        Config, so it is simulated once instead of seven times
+#        Config, so it is simulated once instead of eight times
 # =============================================================================
 
 def _sensory_key(cfg, signal_info, N_sens, sens_seed):
@@ -286,7 +288,7 @@ def _sensory_key(cfg, signal_info, N_sens, sens_seed):
     return (
         signal_info["signal"], signal_info["D"], N_sens, sens_seed,
         cfg.tau_rc, cfg.tau_ref, cfg.tau_syn, cfg.tau_o1,
-        cfg.ridge_lambda_sens, cfg.max_train_samples,
+        cfg.ridge_lambda_rec, cfg.max_train_samples,
         cfg.rate_low, cfg.rate_high, cfg.T, cfg.dt,
     )
 
@@ -441,7 +443,7 @@ def aggregate(df):
 
 
 # =============================================================================
-# 6. The single 14-panel figure
+# 6. The single 16-panel figure
 # =============================================================================
 
 def _panel_uses_log_y(values, ab: AblationConfig):
@@ -456,7 +458,7 @@ def _panel_uses_log_y(values, ab: AblationConfig):
 
 
 # =============================================================================
-# 6. The single 14-panel figure   -- DROP-IN REPLACEMENT for section 6
+# 6. The single 16-panel figure   -- DROP-IN REPLACEMENT for section 6
 #    Add `import matplotlib.ticker as mticker` at the top of the file.
 # =============================================================================
 
@@ -705,19 +707,17 @@ def main():
             max_train_samples=3000, decoder_train_samples=1000,
         )
         ab = AblationConfig(
-            signal_names=("oscillator",),   # note the comma: this must be a tuple
-            N_sens=20, n_seeds=10,
+            signal_names=("lorenz",),   # note the comma: this must be a tuple
+            N_sens=540, n_seeds=3,
             conv_steady_sec=3.0, conv_win_sec=0.5, conv_abs_threshold=0.1,
             out_dir="results_ablation_quicktest",
         )
         small_grid = {
             "eta":               [1e-4, 1e-3, 1e-2],
-            "tau_syn":           [0.02, 0.05, 0.10],
-            "tau_rc":            [0.01, 0.02, 0.05],
-            "tau_ref":           [0.001, 0.002, 0.004],
-            "ridge_lambda_sens": [1e-3, 1e-2, 1e-1],
-            "ridge_lambda_dec":  [1e-3, 1e-2, 1e-1],
-            "cue_end":           [1, 2, 3],
+            "ridge_lambda_rec": [1e-4, 1e-2, 1e-1],
+            "ridge_lambda_e":  [1e-4, 1e-2, 1e-1],
+            "cue_end":           [0.1, 5, 20],
+            "z_clip":            [0.0, 1.0, 1.5],
         }
         run_ablation(base_cfg, ab, grid=small_grid)
     else:

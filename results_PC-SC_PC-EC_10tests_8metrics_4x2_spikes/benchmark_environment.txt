@@ -1,0 +1,15 @@
+Operating system: Windows 11 Pro 25H2
+CPU: AMD Ryzen 7 7700, 8 cores / 16 logical processors, max reported clock 3.8 GHz
+RAM: 32 GB DDR5-4800
+GPU: NVIDIA GeForce RTX 4070 Ti SUPER (not used by the NumPy CPU simulations)
+Storage: XPG GAMMIX S70 BLADE 2 TB + WD_BLACK SN770 1 TB NVMe SSD
+IDE: Visual Studio Code 1.135.0
+Python: 3.10.12
+NumPy: 1.26.4
+pandas: 2.2.3
+Matplotlib: 3.10.1
+Benchmark device: CPU
+GPU acceleration: no
+sim_time_s includes: online SNN simulation + PES adaptation
+sim_time_s excludes: sensory recurrent decoder fitting, PC-SC static error-decoder fitting, population initialization, and metric post-processing
+spikes_per_s: total online spikes from all spiking populations divided by simulated duration
