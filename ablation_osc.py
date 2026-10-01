@@ -76,7 +76,7 @@ TICK_LABELSIZE = 13
 # =============================================================================
 
 # <-- SET THIS to the filename (without ".py") of your main simulation file.
-SIM_MODULE = "PC-EC_PC-SC_lorenz"
+SIM_MODULE = "PC-EC_PC-SC_osc"
 
 # Make a sibling file importable regardless of the current working directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -536,7 +536,7 @@ def plot_rmse_grid(agg, signal, params, baseline, ab: AblationConfig, out_dir):
         squeeze=False,
     )
 
-    letters = [f"{chr(ord('a') + i)})" for i in range(nrows * ncols)]
+    letters = [f"({chr(ord('a') + i)})" for i in range(nrows * ncols)]
     legend_handles, legend_labels = [], []
     col_limits = {j: [np.inf, -np.inf] for j in range(ncols)}
 
