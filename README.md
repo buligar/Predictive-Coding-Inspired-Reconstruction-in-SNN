@@ -51,7 +51,6 @@ The manuscript reports similar reconstruction fidelity for the two architectures
 | [ablation_osc.py](ablation_osc.py) | Corresponding sensitivity analysis for the oscillator at `N_sens = 20`. |
 | [clipping_cd_8panels_spacing.py](clipping_cd_8panels_spacing.py) | Supplementary 4 × 2 view of prediction and latent trajectories with clipping disabled/enabled, for both systems. |
 | [PC-EC_PC-SC_lorenz_new.py](PC-EC_PC-SC_lorenz_new.py) | Frozen-decoder experiment: PES adaptation stops at 15 s. |
-| [compare_bio_nebio_full.py](compare_bio_nebio_full.py), [compare_graph.py](compare_graph.py) | Earlier comparison and plotting workflow, including Python peak memory instead of spike rate. |
 | [results_PC-SC_PC-EC_10tests_8metrics_4x2_spikes/](results_PC-SC_PC-EC_10tests_8metrics_4x2_spikes/) | Revised repeated-run results: configuration, benchmark environment, raw/aggregated CSV and XLSX tables, and figures. |
 | [results_PC-SC_PC-EC_10tests_8metrics_4x2/](results_PC-SC_PC-EC_10tests_8metrics_4x2/) | Earlier repeated-run results with memory measurements. |
 | [results_PC-SC_nePC-SC_lorenz_oscillator/](results_PC-SC_nePC-SC_lorenz_oscillator/) | Representative-run, clipping, and frozen-decoder figures, plus the most recently saved single-run tables. |
