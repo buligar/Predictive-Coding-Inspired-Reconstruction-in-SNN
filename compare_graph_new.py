@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.ticker import StrMethodFormatter
 from pathlib import Path
 
 
@@ -239,7 +240,7 @@ def prettify_arch_name(name):
 
 
 def plot_ijbc_4x2(df_ms, metrics, out_dir):
-    panel_labels = ["a)", "b)", "c)", "d)", "e)", "f)", "g)", "h)"]
+    panel_labels = ["(a)", "(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)"]
 
     for signal_name in sorted(df_ms["signal"].dropna().unique()):
         df_sig = df_ms[df_ms["signal"] == signal_name].copy()
@@ -301,6 +302,9 @@ def plot_ijbc_4x2(df_ms, metrics, out_dir):
 
             ax.grid(True, which="major", linestyle="--", linewidth=0.7, alpha=0.35)
             ax.minorticks_on()
+
+            if metric == "spikes_per_s":
+                ax.yaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
 
             if ylim01:
                 ax.set_ylim(-0.05, 1.05)
