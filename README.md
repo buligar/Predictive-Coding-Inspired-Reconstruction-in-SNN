@@ -52,7 +52,6 @@ The manuscript reports similar reconstruction fidelity for the two architectures
 | [clipping_cd_8panels_spacing.py](clipping_cd_8panels_spacing.py) | Supplementary 4 × 2 view of prediction and latent trajectories with clipping disabled/enabled, for both systems. |
 | [PC-EC_PC-SC_lorenz_without_PES.py](PC-EC_PC-SC_lorenz_without_PES.py) | Frozen-decoder experiment: PES adaptation stops at 15 s. |
 | [results_PC-SC_PC-EC_10tests_8metrics_4x2_spikes/](results_PC-SC_PC-EC_10tests_8metrics_4x2_spikes/) | Revised repeated-run results: configuration, benchmark environment, raw/aggregated CSV and XLSX tables, and figures. |
-| [results_PC-SC_PC-EC_10tests_8metrics_4x2/](results_PC-SC_PC-EC_10tests_8metrics_4x2/) | Earlier repeated-run results with memory measurements. |
 | [results_PC-SC_nePC-SC_lorenz_oscillator/](results_PC-SC_nePC-SC_lorenz_oscillator/) | Representative-run, clipping, and frozen-decoder figures, plus the most recently saved single-run tables. |
 | [results_ablation/](results_ablation/), [results_ablation_quicktest/](results_ablation_quicktest/) | Saved sensitivity-analysis tables and figures. |
 | [ijbc_figures/](ijbc_figures/), [figs/](figs/) | Exported comparison figures and selected illustrations. |
