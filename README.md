@@ -177,7 +177,7 @@ The default entry point runs PC-SC with `z_clip = 0` and `1` for the oscillator 
 ### 5. Frozen decoder: Figure 9
 
 ```bash
-python PC-EC_PC-SC_lorenz_new.py
+python PC-EC_PC-SC_lorenz_without_PES.py
 ```
 
 The default experiment uses Lorenz with 540 sensory neurons and runs both architectures:
