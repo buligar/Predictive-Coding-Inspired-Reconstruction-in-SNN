@@ -536,7 +536,7 @@ def plot_rmse_grid(agg, signal, params, baseline, ab: AblationConfig, out_dir):
         squeeze=False,
     )
 
-    letters = [f"{chr(ord('a') + i)})" for i in range(nrows * ncols)]
+    letters = [f"({chr(ord('a') + i)})" for i in range(nrows * ncols)]
     legend_handles, legend_labels = [], []
     col_limits = {j: [np.inf, -np.inf] for j in range(ncols)}
 
