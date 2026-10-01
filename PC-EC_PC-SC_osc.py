@@ -682,21 +682,21 @@ def plot_overview(result, cfg: Config, out_path):
         fig, gs[0, 0], ref[i0:],
         "Reference signal input",
         fixed_limits=True,
-        panel_label="a)",
+        panel_label="(a)",
     )
 
     ax2 = add_phase_subplot(
         fig, gs[0, 1], u[i0:],
         r"Autonomous sensory" + "\n" + r"dynamics $o_1(t)$",
         fixed_limits=True,
-        panel_label="b)",
+        panel_label="(b)",
     )
 
     ax3 = add_phase_subplot(
         fig, gs[0, 2], g[i0:],
         r"Top-down" + "\n" + r" prediction $g(t)$",
         fixed_limits=True,
-        panel_label="c)",
+        panel_label="(c)",
     )
 
     # Do not fix z limits. This shows the real scale of latent z, as in your example.
@@ -704,14 +704,14 @@ def plot_overview(result, cfg: Config, out_path):
         fig, gs[0, 3], z[i0:],
         r"Latent state $z(t)$",
         fixed_limits=False,
-        panel_label="d)",
+        panel_label="(d)",
     )
 
     ax5 = fig.add_subplot(gs[1, 0])
     for d, lab in enumerate(labels):
         ax5.plot(t[i0:], e_true[i0:, d], linewidth=0.9, label=rf"$e_{lab}$")
     ax5.axvline(cfg.cue_end, linestyle="--", linewidth=0.9, color="k", alpha=0.8)
-    set_panel_title(ax5, "e)", r"Prediction error", pad=12)
+    set_panel_title(ax5, "(e)", r"Prediction error", pad=12)
     ax5.set_xlabel("Time, s")
     ax5.tick_params(axis="both", labelsize=16)
     ax5.grid(True, linestyle="--", alpha=0.35)
@@ -721,7 +721,7 @@ def plot_overview(result, cfg: Config, out_path):
     if spk_o1_t.size > 0:
         ax6.plot(spk_o1_t, spk_o1_i, "|", markersize=2.0)
     ax6.axvline(cfg.cue_end, linestyle="--", linewidth=0.9, color="k", alpha=0.8)
-    set_panel_title(ax6, "f)", r"Spiking activity $o_1$", pad=12)
+    set_panel_title(ax6, "(f)", r"Spiking activity $o_1$", pad=12)
     ax6.set_xlabel("Time, s")
     ax6.tick_params(axis="both", labelsize=16)
     ax6.set_ylabel(r"Neurons $o_1$")
@@ -733,7 +733,7 @@ def plot_overview(result, cfg: Config, out_path):
         if spk_err_t.size > 0:
             ax7.plot(spk_err_t, spk_err_i, "|", markersize=2.0)
         ax7.axvline(cfg.cue_end, linestyle="--", linewidth=0.9, color="k", alpha=0.8)
-        set_panel_title(ax7, "g)", r"Spiking activity error", pad=12)
+        set_panel_title(ax7, "(g)", r"Spiking activity error", pad=12)
         ax7.set_xlabel("Time, s")
         ax7.tick_params(axis="both", labelsize=16)
         ax7.set_ylabel(r"Neurons error")
@@ -741,12 +741,12 @@ def plot_overview(result, cfg: Config, out_path):
         ax7.grid(True, linestyle="--", alpha=0.35)
 
         ax8 = fig.add_subplot(gs[1, 3])
-        panel_label_o2 = "h)"
+        panel_label_o2 = "(h)"
     else:
         # PC-EC has no spiking error population, so this figure must not
         # show a fake error-spike raster. We place o2 directly after o1.
         ax8 = fig.add_subplot(gs[1, 3])
-        panel_label_o2 = "g)"
+        panel_label_o2 = "(g)"
 
     if spk_z_t.size > 0:
         ax8.plot(spk_z_t, spk_z_i, "|", markersize=2.0)
