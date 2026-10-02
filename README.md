@@ -2,7 +2,7 @@
 
 Python code, numerical results, and figures accompanying the manuscript by **Bulat B. Batuev and Sergey V. Sukhov**:
 
-[**Predictive-Coding-Inspired Reconstruction of Nonlinear Dynamics in Spiking Neural Networks** — revised manuscript, September 14, 2026].
+[**Predictive-Coding-Inspired Reconstruction of Nonlinear Dynamics in Spiking Neural Networks** , Dynamics(MPDI), https://www.mdpi.com/2673-8716/6/4/42 Published 01.10.2026].
 
 The study compares two prediction-error architectures for reconstructing an autonomous sensory state in a spiking neural network. Both use leaky integrate-and-fire (LIF) populations, the Neural Engineering Framework (NEF), and a local Prescribed Error Sensitivity (PES)-like decoder update. Experiments cover a periodic two-dimensional oscillator and the chaotic Lorenz system.
 
@@ -236,9 +236,18 @@ The [saved benchmark environment](results_PC-SC_PC-EC_10tests_8metrics_4x2_spike
 
 Until publication details are finalized, cite the supplied manuscript as:
 
-> Batuev, B. B., and Sukhov, S. V. (2026). *Predictive-Coding-Inspired Reconstruction of Nonlinear Dynamics in Spiking Neural Networks*. Revised manuscript, September 14, 2026.
-
-Repository: [buligar/Predictive-Coding-Inspired-Reconstruction-in-SNN](https://github.com/buligar/Predictive-Coding-Inspired-Reconstruction-in-SNN).
+@Article{dynamics6040042,
+AUTHOR = {Batuev, Bulat B. and Sukhov, Sergey V.},
+TITLE = {Predictive-Coding-Inspired Reconstruction of Nonlinear Dynamics in Spiking Neural Networks},
+JOURNAL = {Dynamics},
+VOLUME = {6},
+YEAR = {2026},
+NUMBER = {4},
+ARTICLE-NUMBER = {42},
+URL = {https://www.mdpi.com/2673-8716/6/4/42},
+ISSN = {2673-8716},
+DOI = {10.3390/dynamics6040042}
+}
 
 ## License
 
