@@ -235,7 +235,7 @@ The [saved benchmark environment](results_PC-SC_PC-EC_10tests_8metrics_4x2_spike
 ## Citation
 
 Until publication details are finalized, cite the supplied manuscript as:
-'''bibtex
+```bibtex
 @Article{dynamics6040042,
 AUTHOR = {Batuev, Bulat B. and Sukhov, Sergey V.},
 TITLE = {Predictive-Coding-Inspired Reconstruction of Nonlinear Dynamics in Spiking Neural Networks},
@@ -248,7 +248,7 @@ URL = {https://www.mdpi.com/2673-8716/6/4/42},
 ISSN = {2673-8716},
 DOI = {10.3390/dynamics6040042}
 }
-'''
+```
 ## License
 
 The repository code is distributed under the [GNU Affero General Public License v3.0](LICENSE). See the manuscript for its own publication and licensing information.
